@@ -1,53 +1,55 @@
+using Microsoft.EntityFrameworkCore;
 using RESTAPI.DTOs;
 
-List<Person> users = new List<Person>
-{
-    new() { Id = Guid.NewGuid().ToString(), Name = "Tom", Age = 37 },
-    new() { Id = Guid.NewGuid().ToString(), Name = "Bob", Age = 41 },
-    new() { Id = Guid.NewGuid().ToString(), Name = "Sam", Age = 24 }
-};
-
 var builder = WebApplication.CreateBuilder();
+var connection = "Data Source=app.db";
+builder.Services.AddDbContext<DBContext>(options => options.UseSqlite(connection));
+
 var app = builder.Build();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
-app.MapGet("/api/users", () => users);
+app.MapGet("/api/users", async (DBContext db) => await db.Persons.ToListAsync());
 
-app.MapGet("/api/users/{id}", (string id) =>
+app.MapGet("/api/users/{id}", async (int id, DBContext db) =>
 {
-    Person? user = users.FirstOrDefault(u => u.Id == id);
-    if (user == null) return Results.NotFound(new { message = "Пользователь не найден" });
+    Person? person = await db.Persons.FirstOrDefaultAsync(u => u.Id == id);
+    if (person == null) return Results.NotFound(new { message = "Пользователь не найден" });
 
-    return Results.Json(user);
+    return Results.Json(person);
 });
 
-app.MapDelete("/api/users/{id}", (string id) =>
+app.MapDelete("/api/users/{id:int}", async (int id, DBContext db) =>
 {
-    Person? user = users.FirstOrDefault(u => u.Id == id);
+    Person? person = await db.Persons.FirstOrDefaultAsync(u => u.Id == id);
 
-    if (user == null) return Results.NotFound(new { message = "Пользователь не найден" });
+    if (person == null) return Results.NotFound(new { message = "Пользователь не найден" });
 
-    users.Remove(user);
-    return Results.Json(user);
+    db.Persons.Remove(person);
+    await db.SaveChangesAsync();
+    return Results.Json(person);
 });
 
-app.MapPost("/api/users", (Person user) => {
+app.MapPost("/api/users", async (Person person, DBContext db) =>
+{
+    if (string.IsNullOrEmpty(person.Name))
+        return Results.BadRequest("Name is required");
 
-    user.Id = Guid.NewGuid().ToString();
-    users.Add(user);
-    return user;
+    await db.Persons.AddAsync(person);
+    await db.SaveChangesAsync();
+    return Results.Json(person);
 });
 
-app.MapPut("/api/users", (Person userData) => {
+app.MapPut("/api/users", async (Person person, DBContext db) =>
+{
+    if (await db.Persons.FirstOrDefaultAsync(u => u.Id == person.Id) == null)
+        return Results.NotFound(new { message = "Пользователь не найден" });
 
-    var user = users.FirstOrDefault(u => u.Id == userData.Id);
-    if (user == null) return Results.NotFound(new { message = "Пользователь не найден" });
-
-    user.Age = userData.Age;
-    user.Name = userData.Name;
-    return Results.Json(user);
+    person.Age = person.Age;
+    person.Name = person.Name;
+    await db.SaveChangesAsync();
+    return Results.Json(person);
 });
 
 app.Run();
